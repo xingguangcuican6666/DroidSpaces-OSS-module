@@ -172,15 +172,52 @@ set_config_y() {
   fi
 }
 
+symbol_declared() {
+  local symbol="${1#CONFIG_}"
+  local file
+
+  while IFS= read -r -d '' file; do
+    if grep -Eq "^[[:space:]]*(menuconfig|config)[[:space:]]+${symbol}([[:space:]]|$)" "$file"; then
+      return 0
+    fi
+  done < <(find "$KERNEL_ROOT/common" -type f -name 'Kconfig*' -print0)
+
+  return 1
+}
+
+set_required_config_y() {
+  local symbol="$1"
+
+  if ! symbol_declared "$symbol"; then
+    fail "required Kconfig symbol is not declared: $symbol"
+  fi
+
+  set_config_y "$symbol"
+}
+
+set_optional_config_y() {
+  local symbol="$1"
+
+  if ! symbol_declared "$symbol"; then
+    info "Skipping optional config not declared by this kernel: $symbol"
+    return
+  fi
+
+  set_config_y "$symbol"
+}
+
 configure_defconfig() {
   require_file "$DEFCONFIG"
 
-  local configs=(
+  local required_configs=(
     CONFIG_SYSVIPC
     CONFIG_POSIX_MQUEUE
     CONFIG_IPC_NS
     CONFIG_PID_NS
     CONFIG_DEVTMPFS
+  )
+
+  local optional_configs=(
     CONFIG_NETFILTER_XT_MATCH_ADDRTYPE
     CONFIG_NETFILTER_XT_TARGET_REJECT
     CONFIG_NETFILTER_XT_TARGET_LOG
@@ -191,8 +228,12 @@ configure_defconfig() {
     CONFIG_NETFILTER_XT_SET
   )
 
-  for config in "${configs[@]}"; do
-    set_config_y "$config"
+  for config in "${required_configs[@]}"; do
+    set_required_config_y "$config"
+  done
+
+  for config in "${optional_configs[@]}"; do
+    set_optional_config_y "$config"
   done
 }
 

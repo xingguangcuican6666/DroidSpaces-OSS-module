@@ -35,8 +35,9 @@ Other kernel lines fail fast instead of silently writing unsafe configuration.
 - applies the patch under `$KERNEL_ROOT/common`;
 - applies the extra POSIX mqueue kABI patch on `5.10`;
 - updates `$DEFCONFIG` one option at a time, replacing `# CONFIG_x is not set` when present and appending missing options.
+- skips optional networking symbols when the target kernel does not declare them, avoiding Bazel trim-config failures.
 
-The enabled config symbols are:
+Required config symbols:
 
 ```makefile
 CONFIG_SYSVIPC=y
@@ -44,6 +45,11 @@ CONFIG_POSIX_MQUEUE=y
 CONFIG_IPC_NS=y
 CONFIG_PID_NS=y
 CONFIG_DEVTMPFS=y
+```
+
+Optional config symbols are enabled only when the target kernel declares them:
+
+```makefile
 CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
 CONFIG_NETFILTER_XT_TARGET_REJECT=y
 CONFIG_NETFILTER_XT_TARGET_LOG=y
@@ -55,6 +61,8 @@ CONFIG_NETFILTER_XT_SET=y
 ```
 
 Patch application is strict: if a required patch cannot apply and is not already applied, the build fails.
+
+Required DroidSpaces symbols fail fast when missing from Kconfig. Optional networking/UFW/Fail2ban symbols are enabled only when the target kernel declares them.
 
 ## Verification
 
