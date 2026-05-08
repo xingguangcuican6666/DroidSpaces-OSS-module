@@ -34,6 +34,7 @@ Other kernel lines fail fast instead of silently writing unsafe configuration.
 - downloads the required DroidSpaces GKI kABI patch from the upstream repository;
 - applies the patch under `$KERNEL_ROOT/common`;
 - applies the extra POSIX mqueue kABI patch on `5.10`;
+- exports `init_ipc_ns` and `put_ipc_ns` on Android 16 / 6.12.23-6.12.69 only, fixing the `rust_binder.ko` modpost failure caused by enabling IPC namespaces;
 - updates `$DEFCONFIG` one option at a time, replacing `# CONFIG_x is not set` when present and appending missing options.
 - skips optional networking symbols when the target kernel does not declare them, avoiding Bazel trim-config failures.
 

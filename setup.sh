@@ -23,10 +23,12 @@ detect_kernel_version() {
   local makefile="$KERNEL_ROOT/common/Makefile"
   local version=""
   local patchlevel=""
+  local sublevel=""
 
   if [ -f "$makefile" ]; then
     version="$(awk -F'= *' '$1 ~ /^VERSION / { print $2; exit }' "$makefile" | tr -d '[:space:]')"
     patchlevel="$(awk -F'= *' '$1 ~ /^PATCHLEVEL / { print $2; exit }' "$makefile" | tr -d '[:space:]')"
+    sublevel="$(awk -F'= *' '$1 ~ /^SUBLEVEL / { print $2; exit }' "$makefile" | tr -d '[:space:]')"
   fi
 
   if [ -z "$version" ] || [ -z "$patchlevel" ]; then
@@ -40,13 +42,26 @@ detect_kernel_version() {
     esac
   fi
 
+  if [ -z "$sublevel" ]; then
+    sublevel="$(printf '%s\n' "${CONFIG:-}" | sed -n 's/.*-[0-9]\+\.[0-9]\+-\([0-9]\+\).*/\1/p')"
+  fi
+
   KERNEL_MAJOR="$version"
   KERNEL_MINOR="$patchlevel"
+  KERNEL_SUBLEVEL="${sublevel:-0}"
   KERNEL_MM="${KERNEL_MAJOR}.${KERNEL_MINOR}"
 }
 
 kernel_version_code() {
   printf '%03d%03d\n' "$KERNEL_MAJOR" "$KERNEL_MINOR"
+}
+
+kernel_sublevel_between() {
+  local min="$1"
+  local max="$2"
+
+  [[ "$KERNEL_SUBLEVEL" =~ ^[0-9]+$ ]] || return 1
+  [ "$KERNEL_SUBLEVEL" -ge "$min" ] && [ "$KERNEL_SUBLEVEL" -le "$max" ]
 }
 
 download_patch() {
@@ -126,6 +141,51 @@ apply_sysvipc_612_plus_compat() {
   grep -qF 'char __kabi_ignored_0;' "$sched" || fail "failed to inject SYSVIPC 6.12+ ignored field"
   grep -qF '// struct sysv_sem' "$sched" || fail "failed to comment original SYSVIPC fields"
   info "Applied SYSVIPC 6.12+ kABI fallback"
+}
+
+ensure_export_header() {
+  local file="$1"
+
+  if grep -qF '#include <linux/export.h>' "$file"; then
+    return 0
+  fi
+
+  perl -0pi -e 's/(\n#include "util\.h")/\n#include <linux\/export.h>$1/s or die "util.h include anchor not found\n";' "$file" \
+    || fail "failed to add linux/export.h to $file"
+  grep -qF '#include <linux/export.h>' "$file" || fail "failed to verify linux/export.h in $file"
+}
+
+apply_rust_binder_ipc_export_612_23_69() {
+  local msgutil="$KERNEL_ROOT/common/ipc/msgutil.c"
+  local namespace="$KERNEL_ROOT/common/ipc/namespace.c"
+
+  if [ "$KERNEL_MM" != "6.12" ] || ! kernel_sublevel_between 23 69; then
+    return 0
+  fi
+
+  require_file "$msgutil"
+  require_file "$namespace"
+
+  if ! grep -qF 'EXPORT_SYMBOL(init_ipc_ns);' "$msgutil"; then
+    ensure_export_header "$msgutil"
+    perl -0pi -e 's/(struct\s+ipc_namespace\s+init_ipc_ns\b[^=]*=\s*\{.*?\n\};)/$1\nEXPORT_SYMBOL(init_ipc_ns);/s or die "init_ipc_ns definition anchor not found\n";' "$msgutil" \
+      || fail "failed to export init_ipc_ns"
+    grep -qF 'EXPORT_SYMBOL(init_ipc_ns);' "$msgutil" || fail "failed to verify init_ipc_ns export"
+    info "Exported init_ipc_ns for 6.12.$KERNEL_SUBLEVEL rust_binder"
+  fi
+
+  if ! grep -qF 'EXPORT_SYMBOL(put_ipc_ns);' "$namespace"; then
+    ensure_export_header "$namespace"
+    if grep -qE '^static[[:space:]]+(inline[[:space:]]+)?struct[[:space:]]+ipc_namespace[[:space:]]+\*to_ipc_ns[[:space:]]*\(' "$namespace"; then
+      perl -0pi -e 's/\n(static\s+(?:inline\s+)?struct\s+ipc_namespace\s+\*to_ipc_ns\s*\()/\nEXPORT_SYMBOL(put_ipc_ns);\n\n$1/s or die "to_ipc_ns anchor not found\n";' "$namespace" \
+        || fail "failed to export put_ipc_ns before to_ipc_ns"
+    else
+      perl -0pi -e 's/\n(static\s+struct\s+ns_common\s+\*ipcns_get\s*\()/\nEXPORT_SYMBOL(put_ipc_ns);\n\n$1/s or die "ipcns_get anchor not found\n";' "$namespace" \
+        || fail "failed to export put_ipc_ns before ipcns_get"
+    fi
+    grep -qF 'EXPORT_SYMBOL(put_ipc_ns);' "$namespace" || fail "failed to verify put_ipc_ns export"
+    info "Exported put_ipc_ns for 6.12.$KERNEL_SUBLEVEL rust_binder"
+  fi
 }
 
 apply_droidspaces_patches() {
@@ -252,6 +312,7 @@ main() {
 
   info "Configuring DroidSpaces for ABK GKI $KERNEL_MM"
   apply_droidspaces_patches
+  apply_rust_binder_ipc_export_612_23_69
   configure_defconfig
   info "DroidSpaces kernel configuration complete"
 }
