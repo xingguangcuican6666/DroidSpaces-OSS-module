@@ -1,5 +1,7 @@
 # DroidSpaces-OSS ABK Module
 
+# DO NOT ENABLE WITH Virtualization support
+
 ABK custom external module for enabling DroidSpaces-OSS kernel support on AnyBase Kernel GKI builds.
 
 This module follows the upstream DroidSpaces kernel guide:
