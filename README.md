@@ -13,6 +13,12 @@ Enable ABK custom external modules and add this module in the `after_patch` stag
 https://github.com/xingguangcuican6666/DroidSpaces-OSS-module.git;after_patch
 ```
 
+For ABK APP
+
+```text
+https://github.com/xingguangcuican6666/DroidSpaces-OSS-module.git
+```
+
 The module entrypoint is `setup.sh`. ABK runs it from the module repository root after built-in source integrations and before the final build.
 
 ## Supported Kernels
